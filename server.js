@@ -146,8 +146,10 @@ app.post('/api/accounts', requireAuth, async (req, res) => {
         try { fs.appendFileSync(path.join(__dirname, 'access.log'), info); } catch (e) {}
 
         if (EntryModel) {
-            await EntryModel.create({ ...entry, createdAt: entry.createdAt });
-            return res.status(201).json({ ok: true });
+            // avoid passing custom 'id' to MongoDB (prevents casting issues)
+            const doc = { userId: entry.userId, amount: entry.amount, type: entry.type, category: entry.category, description: entry.description, createdAt: entry.createdAt };
+            const created = await EntryModel.create(doc);
+            return res.status(201).json({ ok: true, entry: { _id: created._id, amount: created.amount, type: created.type, category: created.category, description: created.description, createdAt: created.createdAt } });
         }
         const all = readJson(ENTRIES_FILE);
         all.push(entry);
@@ -167,9 +169,20 @@ app.delete('/api/accounts/:id', requireAuth, async (req, res) => {
     const userId = req.session.userId;
     const id = req.params.id;
     if (EntryModel) {
-        const doc = await EntryModel.findOneAndDelete({ _id: id, userId });
-        if (!doc) return res.status(404).json({ error: 'Not found' });
-        return res.json({ ok: true });
+        try {
+            let doc = null;
+            try {
+                doc = await EntryModel.findOneAndDelete({ _id: id, userId });
+            } catch (e) {
+                // possible CastError when id is not an ObjectId - fallback to matching custom 'id' field
+                doc = await EntryModel.findOneAndDelete({ id: id, userId });
+            }
+            if (!doc) return res.status(404).json({ error: 'Not found' });
+            return res.json({ ok: true });
+        } catch (e) {
+            console.error('delete entry error', e);
+            return res.status(500).json({ error: 'Server error' });
+        }
     }
     const all = readJson(ENTRIES_FILE);
     const idx = all.findIndex(e => e.id === id && e.userId === userId);
