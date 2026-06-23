@@ -10,11 +10,12 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+app.set('trust proxy', 1);
 app.use(session({
     secret: process.env.SESSION_SECRET || 'dev-secret',
     resave: false,
     saveUninitialized: false,
-    cookie: { maxAge: 1000 * 60 * 60 * 24 }
+    cookie: { maxAge: 1000 * 60 * 60 * 24, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' }
 }));
 
 // logging
@@ -60,6 +61,8 @@ const writeJson = (p, data) => { fs.writeFileSync(p, JSON.stringify(data, null, 
 // auth middleware
 const requireAuth = (req, res, next) => {
     if (req.session && req.session.userId) return next();
+    const info = `[${new Date().toISOString()}] Unauthorized access attempt: ${req.method} ${req.url} from ${req.ip}\n`;
+    try { fs.appendFileSync(path.join(__dirname, 'access.log'), info); } catch (e) {}
     res.status(401).json({ error: 'Unauthorized' });
 };
 
@@ -125,15 +128,28 @@ app.get('/api/accounts', requireAuth, async (req, res) => {
 app.post('/api/accounts', requireAuth, async (req, res) => {
     const userId = req.session.userId;
     const { amount, type, category, description } = req.body;
-    const entry = { id: Date.now().toString(36), userId, amount: Number(amount) || 0, type: type || 'expense', category: category || '其他', description: description || '', createdAt: new Date() };
-    if (EntryModel) {
-        await EntryModel.create({ ...entry, createdAt: entry.createdAt });
-        return res.status(201).json({ ok: true });
+    try {
+        const parsedAmount = Number(amount);
+        if (Number.isNaN(parsedAmount)) return res.status(400).json({ error: 'Invalid amount' });
+        const entry = { id: Date.now().toString(36), userId, amount: parsedAmount || 0, type: type || 'expense', category: category || '其他', description: description || '', createdAt: new Date() };
+
+        // log the incoming request for debugging
+        const info = `[${new Date().toISOString()}] CREATE entry user=${userId} body=${JSON.stringify(req.body)}\n`;
+        try { fs.appendFileSync(path.join(__dirname, 'access.log'), info); } catch (e) {}
+
+        if (EntryModel) {
+            await EntryModel.create({ ...entry, createdAt: entry.createdAt });
+            return res.status(201).json({ ok: true });
+        }
+        const all = readJson(ENTRIES_FILE);
+        all.push(entry);
+        writeJson(ENTRIES_FILE, all);
+        res.status(201).json({ ok: true, entry });
+    } catch (err) {
+        const errMsg = err && err.message ? err.message : String(err);
+        try { fs.appendFileSync(path.join(__dirname, 'error.log'), `[${new Date().toISOString()}] accounts POST error: ${errMsg}\n`); } catch (e) {}
+        res.status(500).json({ error: 'Server error', detail: errMsg });
     }
-    const all = readJson(ENTRIES_FILE);
-    all.push(entry);
-    writeJson(ENTRIES_FILE, all);
-    res.status(201).json({ ok: true, entry });
 });
 
 app.delete('/api/accounts/:id', requireAuth, async (req, res) => {
