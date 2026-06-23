@@ -74,7 +74,7 @@
 
         async function checkAuth() {
             // test by calling accounts; if 401, show auth
-            const r = await fetch('/api/accounts');
+            const r = await fetch('/api/accounts', { credentials: 'same-origin' });
             if (r.status === 401) { authDiv.classList.remove('hidden'); appDiv.classList.add('hidden'); return false; }
             authDiv.classList.add('hidden'); appDiv.classList.remove('hidden'); loadEntries(); return true;
         }
@@ -85,8 +85,8 @@
             const username = fd.get('username');
             const password = fd.get('password');
             if (password.length < 6) return alert('密碼需至少 6 字');
-            const res = await fetch('/api/register', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({username,password})});
-            if (res.ok) { alert('註冊成功'); checkAuth(); } else { const j=await res.json(); alert(j.error||'註冊失敗'); }
+            const res = await fetch('/api/register', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({username,password}), credentials: 'same-origin'});
+            if (res.ok) { alert('註冊成功'); checkAuth(); } else { let msg = '註冊失敗'; try { const j = await res.json(); msg = j.error || msg; } catch (e){} alert(msg); }
         });
 
         loginForm.addEventListener('submit', async (e)=>{
@@ -94,11 +94,11 @@
             const fd = new FormData(loginForm);
             const username = fd.get('username');
             const password = fd.get('password');
-            const res = await fetch('/api/login', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({username,password})});
-            if (res.ok) { checkAuth(); } else { const j=await res.json(); alert(j.error||'登入失敗'); }
+            const res = await fetch('/api/login', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({username,password}), credentials: 'same-origin'});
+            if (res.ok) { checkAuth(); } else { let msg = '登入失敗'; try { const j = await res.json(); msg = j.error || msg; } catch (e){} alert(msg); }
         });
 
-        $('#logoutBtn').addEventListener('click', async ()=>{ await fetch('/api/logout',{method:'POST'}); checkAuth(); });
+        $('#logoutBtn').addEventListener('click', async ()=>{ await fetch('/api/logout',{method:'POST', credentials: 'same-origin'}); checkAuth(); });
 
         entryForm.addEventListener('submit', async (e)=>{
             e.preventDefault();
@@ -109,12 +109,12 @@
                 category: fd.get('category'),
                 description: fd.get('description')
             };
-            const res = await fetch('/api/accounts', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(payload)});
-            if (res.ok) { entryForm.reset(); loadEntries(); } else { alert('新增失敗'); }
+            const res = await fetch('/api/accounts', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(payload), credentials: 'same-origin'});
+            if (res.ok) { entryForm.reset(); loadEntries(); } else { let msg = '新增失敗'; try { const j = await res.json(); msg = j.error || msg; } catch (e){} alert(msg); }
         });
 
         async function loadEntries(){
-            const r = await fetch('/api/accounts');
+            const r = await fetch('/api/accounts', { credentials: 'same-origin' });
             if (r.status===401) return checkAuth();
             const data = await r.json();
             entriesTable.innerHTML = '';
@@ -129,10 +129,10 @@
             totalExpense.textContent = expense.toFixed(2);
             balance.textContent = (income - expense).toFixed(2);
             // attach delete
-            entriesTable.querySelectorAll('button').forEach(btn=> btn.addEventListener('click', async ()=>{
+                entriesTable.querySelectorAll('button').forEach(btn=> btn.addEventListener('click', async ()=>{
                 const id = btn.getAttribute('data-id');
-                const res = await fetch('/api/accounts/'+id, {method:'DELETE'});
-                if (res.ok) loadEntries(); else alert('刪除失敗');
+                const res = await fetch('/api/accounts/'+id, {method:'DELETE', credentials: 'same-origin'});
+                if (res.ok) loadEntries(); else { let msg='刪除失敗'; try { const j=await res.json(); msg=j.error||msg } catch(e){} alert(msg); }
             }));
         }
 
