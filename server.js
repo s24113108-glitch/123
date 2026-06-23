@@ -10,6 +10,14 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// debug: log POST request bodies to console (helps Render logs)
+app.use((req, res, next) => {
+    if (req.method === 'POST') {
+        try { console.log(`[REQ BODY] ${new Date().toISOString()} ${req.method} ${req.url} ${JSON.stringify(req.body)}`); } catch (e) { console.log('[REQ BODY] unable to stringify body'); }
+    }
+    next();
+});
+
 app.set('trust proxy', 1);
 app.use(session({
     secret: process.env.SESSION_SECRET || 'dev-secret',
@@ -147,7 +155,10 @@ app.post('/api/accounts', requireAuth, async (req, res) => {
         res.status(201).json({ ok: true, entry });
     } catch (err) {
         const errMsg = err && err.message ? err.message : String(err);
+        // write to file for local debugging
         try { fs.appendFileSync(path.join(__dirname, 'error.log'), `[${new Date().toISOString()}] accounts POST error: ${errMsg}\n`); } catch (e) {}
+        // also log to console so Render shows it in service logs
+        console.error('accounts POST error', err);
         res.status(500).json({ error: 'Server error', detail: errMsg });
     }
 });
