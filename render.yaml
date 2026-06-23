@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: sony-project
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: SESSION_SECRET
+        sync: false
+      - key: MONGO_URI
+        sync: false

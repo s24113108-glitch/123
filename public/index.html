@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>簡易記帳示範</title>
+    <style>
+        body{font-family: Microsoft JhengHei; max-width:800px;margin:40px auto}
+        .hidden{display:none}
+        table{width:100%;border-collapse:collapse}
+        th,td{border:1px solid #ddd;padding:8px}
+    </style>
+</head>
+<body>
+    <h1>小型記帳 App</h1>
+
+    <div id="auth">
+        <h2>註冊</h2>
+        <form id="registerForm">
+            <input name="username" placeholder="使用者名稱" required>
+            <input name="password" type="password" placeholder="密碼 (>=6)" required>
+            <button>註冊</button>
+        </form>
+
+        <h2>登入</h2>
+        <form id="loginForm">
+            <input name="username" placeholder="使用者名稱" required>
+            <input name="password" type="password" placeholder="密碼" required>
+            <button>登入</button>
+        </form>
+    </div>
+
+    <div id="app" class="hidden">
+        <button id="logoutBtn">登出</button>
+        <h2>新增帳目</h2>
+        <form id="entryForm">
+            <input name="amount" type="number" step="0.01" placeholder="金額" required>
+            <select name="type">
+                <option value="expense">支出</option>
+                <option value="income">收入</option>
+            </select>
+            <select name="category">
+                <option>餐飲</option>
+                <option>交通</option>
+                <option>娛樂</option>
+                <option>其他</option>
+            </select>
+            <input name="description" placeholder="說明">
+            <button>新增</button>
+        </form>
+
+        <h2>帳目列表</h2>
+        <div>
+            <strong>總收入：</strong><span id="totalIncome">0</span> &nbsp;
+            <strong>總支出：</strong><span id="totalExpense">0</span> &nbsp;
+            <strong>資產：</strong><span id="balance">0</span>
+        </div>
+        <table id="entriesTable">
+            <thead><tr><th>時間</th><th>類別</th><th>金額</th><th>說明</th><th>動作</th></tr></thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <script>
+        const $ = (s)=>document.querySelector(s);
+        const regForm = $('#registerForm');
+        const loginForm = $('#loginForm');
+        const authDiv = $('#auth');
+        const appDiv = $('#app');
+        const entryForm = $('#entryForm');
+        const entriesTable = $('#entriesTable tbody');
+        const totalIncome = $('#totalIncome');
+        const totalExpense = $('#totalExpense');
+        const balance = $('#balance');
+
+        async function checkAuth() {
+            // test by calling accounts; if 401, show auth
+            const r = await fetch('/api/accounts');
+            if (r.status === 401) { authDiv.classList.remove('hidden'); appDiv.classList.add('hidden'); return false; }
+            authDiv.classList.add('hidden'); appDiv.classList.remove('hidden'); loadEntries(); return true;
+        }
+
+        regForm.addEventListener('submit', async (e)=>{
+            e.preventDefault();
+            const fd = new FormData(regForm);
+            const username = fd.get('username');
+            const password = fd.get('password');
+            if (password.length < 6) return alert('密碼需至少 6 字');
+            const res = await fetch('/api/register', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({username,password})});
+            if (res.ok) { alert('註冊成功'); checkAuth(); } else { const j=await res.json(); alert(j.error||'註冊失敗'); }
+        });
+
+        loginForm.addEventListener('submit', async (e)=>{
+            e.preventDefault();
+            const fd = new FormData(loginForm);
+            const username = fd.get('username');
+            const password = fd.get('password');
+            const res = await fetch('/api/login', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify({username,password})});
+            if (res.ok) { checkAuth(); } else { const j=await res.json(); alert(j.error||'登入失敗'); }
+        });
+
+        $('#logoutBtn').addEventListener('click', async ()=>{ await fetch('/api/logout',{method:'POST'}); checkAuth(); });
+
+        entryForm.addEventListener('submit', async (e)=>{
+            e.preventDefault();
+            const fd = new FormData(entryForm);
+            const payload = {
+                amount: fd.get('amount'),
+                type: fd.get('type'),
+                category: fd.get('category'),
+                description: fd.get('description')
+            };
+            const res = await fetch('/api/accounts', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(payload)});
+            if (res.ok) { entryForm.reset(); loadEntries(); } else { alert('新增失敗'); }
+        });
+
+        async function loadEntries(){
+            const r = await fetch('/api/accounts');
+            if (r.status===401) return checkAuth();
+            const data = await r.json();
+            entriesTable.innerHTML = '';
+            let income=0, expense=0;
+            data.sort((a,b)=> new Date(b.createdAt)-new Date(a.createdAt)).forEach(e=>{
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${new Date(e.createdAt).toLocaleString()}</td><td>${e.category}</td><td>${e.type==='income'?'+':'-'}${Number(e.amount).toFixed(2)}</td><td>${e.description||''}</td><td><button data-id='${e.id||e._id}'>刪除</button></td>`;
+                entriesTable.appendChild(tr);
+                if (e.type==='income') income += Number(e.amount); else expense += Number(e.amount);
+            });
+            totalIncome.textContent = income.toFixed(2);
+            totalExpense.textContent = expense.toFixed(2);
+            balance.textContent = (income - expense).toFixed(2);
+            // attach delete
+            entriesTable.querySelectorAll('button').forEach(btn=> btn.addEventListener('click', async ()=>{
+                const id = btn.getAttribute('data-id');
+                const res = await fetch('/api/accounts/'+id, {method:'DELETE'});
+                if (res.ok) loadEntries(); else alert('刪除失敗');
+            }));
+        }
+
+        checkAuth();
+    </script>
+</body>
+</html>
